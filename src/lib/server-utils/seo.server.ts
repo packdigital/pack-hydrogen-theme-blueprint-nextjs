@@ -1,0 +1,618 @@
+import type {
+  Collection,
+  Product,
+  ProductVariant,
+  Image,
+  Shop,
+} from '@shopify/hydrogen/storefront-api-types';
+import type {CollectionPage, Offer, SearchResultsPage} from 'schema-dts';
+
+import type {SeoConfig} from '~/lib/seo/metadata';
+import type {AppLoadContext} from '~/lib/server/context';
+import type {
+  ArticlePage,
+  BlogPage,
+  Page,
+  RootSiteSettings,
+  Seo,
+} from '~/lib/types';
+
+import {getShop, getSiteSettings} from './settings.server';
+
+type SeoMedia = SeoConfig['media'];
+
+export const getAccountSeo = async (
+  context: AppLoadContext,
+  accountTitle: string,
+) => {
+  try {
+    const [shop, siteSettings] = await Promise.all([
+      getShop(context),
+      getSiteSettings(context),
+    ]);
+    const {title: seoSiteTitle} = {
+      ...siteSettings?.data?.siteSettings?.seo,
+    } as Seo;
+    const noIndex =
+      !!siteSettings?.data?.siteSettings?.settings?.account?.noIndex;
+    const noFollow =
+      !!siteSettings?.data?.siteSettings?.settings?.account?.noFollow;
+    const robots = {noIndex, noFollow};
+    const siteTitle = seoSiteTitle || shop?.name || '';
+    const title = `${accountTitle} | ${siteTitle}`;
+    const seo = {title, robots};
+    return seo;
+  } catch (error) {
+    console.error('Error fetching shop or site settings for SEO:', error);
+    return {
+      title: accountTitle,
+      robots: {
+        noIndex: false,
+        noFollow: false,
+      },
+    };
+  }
+};
+
+const getMeta = ({
+  affixSiteTitleToSeoTitle = true,
+  page,
+  resource,
+  shop,
+  siteSettings,
+}: {
+  affixSiteTitleToSeoTitle?: boolean;
+  page?: Page;
+  resource?: Record<string, any>;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+}): {
+  title: string;
+  description: string;
+  pageTitle: string;
+  pageDescription: string;
+  media: SeoMedia;
+  robots: {noIndex: boolean; noFollow: boolean};
+} => {
+  const {title: seoSiteTitle, description: seoSiteDescription} = {
+    ...siteSettings?.data?.siteSettings?.seo,
+  } as Seo;
+  const siteTitle = seoSiteTitle || shop?.name || '';
+  const seoTitle = resource?.seo?.title || page?.seo?.title;
+  let title = ''; // title for og and meta tag
+  let pageTitle = ''; // title for seo json ld
+  if (seoTitle) {
+    const seoTitleMaybeWithSiteTitle = affixSiteTitleToSeoTitle
+      ? `${seoTitle}${siteTitle ? ` | ${siteTitle}` : ''}`
+      : seoTitle;
+    pageTitle = seoTitleMaybeWithSiteTitle;
+    title = seoTitleMaybeWithSiteTitle;
+  } else {
+    pageTitle = resource?.title || page?.title || '';
+    title = pageTitle
+      ? `${pageTitle}${siteTitle ? ` | ${siteTitle}` : ''}`
+      : siteTitle;
+    if (page?.handle === '/') {
+      pageTitle = pageTitle === 'Homepage' ? siteTitle : pageTitle;
+      title = siteTitle;
+    }
+  }
+  const pageDescription =
+    resource?.seo?.description ||
+    page?.seo?.description ||
+    resource?.description ||
+    page?.description ||
+    '';
+  const description = truncate(
+    pageDescription || seoSiteDescription || shop?.description || '',
+  );
+  const media: SeoMedia = {
+    type: 'image',
+    url: page?.seo?.image || resource?.seo?.image || '',
+  };
+  const robots = {
+    noIndex: !!page?.seo?.noIndex,
+    noFollow: !!page?.seo?.noFollow,
+  };
+  return {title, description, pageTitle, pageDescription, media, robots};
+};
+
+function root({
+  shop,
+  siteSettings,
+  url,
+}: {
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+  url: Request['url'];
+}): SeoConfig {
+  const {
+    title: seoSiteTitle,
+    description: seoSiteDescription,
+    image: seoSiteImage,
+  } = {
+    ...siteSettings?.data?.siteSettings?.seo,
+  } as Seo;
+  const title = seoSiteTitle || shop?.name || '';
+  const description = truncate(seoSiteDescription || shop?.description || '');
+  const siteUrl = new URL(url);
+  const origin = siteUrl.origin;
+  const media: SeoMedia = seoSiteImage
+    ? {type: 'image', url: seoSiteImage}
+    : undefined;
+
+  return {
+    title,
+    description,
+    media,
+    url,
+    robots: {
+      noIndex: false,
+      noFollow: false,
+    },
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: shop.name,
+      logo: shop.brand?.logo?.image?.url,
+      sameAs: [], // social media links
+      url,
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: `${origin}/search?q={search_term}`,
+        query: "required name='search_term'",
+      },
+    },
+  };
+}
+
+function home({
+  page,
+  shop,
+  siteSettings,
+}: {
+  page?: Page;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+}): SeoConfig {
+  const {title, description, media, robots} = getMeta({
+    page,
+    shop,
+    siteSettings,
+  });
+  return {
+    title,
+    description,
+    media,
+    robots,
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'WebPage',
+      name: 'Home page',
+    },
+  };
+}
+
+type SelectedVariantRequiredFields = Pick<ProductVariant, 'sku'> & {
+  image?: null | Partial<Image>;
+};
+
+type ProductRequiredFields = Pick<
+  Product,
+  'title' | 'description' | 'vendor' | 'seo'
+> & {
+  featuredImage?: null | Partial<Image>;
+  variants: {
+    nodes: Array<
+      Pick<
+        ProductVariant,
+        'sku' | 'price' | 'selectedOptions' | 'availableForSale'
+      >
+    >;
+  };
+};
+
+function productJsonLd({
+  product,
+  selectedVariant,
+  url,
+}: {
+  product: ProductRequiredFields;
+  selectedVariant: SelectedVariantRequiredFields;
+  url: Request['url'];
+}): SeoConfig['jsonLd'] {
+  const origin = new URL(url).origin;
+  const variants = product.variants?.nodes;
+  const description = truncate(
+    product?.seo?.description || product?.description,
+  );
+  const offers: Offer[] = (variants || []).map((variant) => {
+    const variantUrl = new URL(url);
+    variant.selectedOptions.forEach((option) => {
+      return variantUrl.searchParams.set(option.name, option.value);
+    });
+    const availability = variant.availableForSale
+      ? 'https://schema.org/InStock'
+      : 'https://schema.org/OutOfStock';
+
+    return {
+      '@type': 'Offer',
+      availability,
+      price: parseFloat(variant.price.amount),
+      priceCurrency: variant.price.currencyCode,
+      sku: variant?.sku || '',
+      url: variantUrl.toString(),
+    };
+  });
+  return [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Homepage',
+          item: `${origin}/`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: product.title,
+        },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      brand: {
+        '@type': 'Brand',
+        name: product.vendor,
+      },
+      description,
+      image: [selectedVariant?.image?.url || product?.featuredImage?.url || ''],
+      name: product.title,
+      offers,
+      sku: selectedVariant?.sku || '',
+      url,
+    },
+  ];
+}
+
+function product({
+  product,
+  selectedVariant,
+  page,
+  shop,
+  siteSettings,
+  url,
+}: {
+  product: ProductRequiredFields;
+  selectedVariant: SelectedVariantRequiredFields;
+  page?: Page;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+  url: Request['url'];
+}): SeoConfig {
+  const {title, description, media, robots} = getMeta({
+    affixSiteTitleToSeoTitle: false,
+    page,
+    resource: product,
+    shop,
+    siteSettings,
+  });
+  return {
+    title,
+    description,
+    media,
+    robots,
+    jsonLd: productJsonLd({product, selectedVariant, url}),
+  };
+}
+
+type CollectionRequiredFields = Omit<
+  Collection,
+  'products' | 'descriptionHtml' | 'metafields' | 'image' | 'updatedAt'
+> & {
+  products: {nodes: Pick<Product, 'handle'>[]};
+  image?: null | Pick<Image, 'url' | 'height' | 'width' | 'altText'>;
+  descriptionHtml?: null | Collection['descriptionHtml'];
+  updatedAt?: null | Collection['updatedAt'];
+  metafields?: null | Collection['metafields'];
+};
+
+function collectionJsonLd({
+  collection,
+  url,
+}: {
+  collection: CollectionRequiredFields;
+  url: Request['url'];
+}): SeoConfig['jsonLd'] {
+  const origin = new URL(url).origin;
+  const itemListElement: CollectionPage['mainEntity'] =
+    collection.products.nodes.slice(0, 10).map((product, index) => {
+      return {
+        '@type': 'ListItem',
+        position: index + 1,
+        url: `/products/${product.handle}`,
+      };
+    });
+
+  return [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Homepage',
+          item: `${origin}/`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: collection.title,
+        },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: collection?.seo?.title || collection?.title || '',
+      description: truncate(
+        collection?.seo?.description || collection?.description || '',
+      ),
+      image: collection?.image?.url,
+      url: `/collections/${collection.handle}`,
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement,
+      },
+    },
+  ];
+}
+
+function collection({
+  collection,
+  page,
+  shop,
+  siteSettings,
+  url,
+}: {
+  collection: CollectionRequiredFields;
+  page?: Page;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+  url: Request['url'];
+}): SeoConfig {
+  const {title, description, media, robots} = getMeta({
+    affixSiteTitleToSeoTitle: false,
+    page,
+    resource: collection,
+    shop,
+    siteSettings,
+  });
+  return {
+    title,
+    description,
+    media,
+    robots,
+    jsonLd: collectionJsonLd({collection, url}),
+  };
+}
+
+type SearchRequiredFields = Omit<
+  Collection,
+  'products' | 'descriptionHtml' | 'metafields' | 'image' | 'updatedAt'
+> & {
+  products: {nodes: Pick<Product, 'handle'>[]};
+  image?: null | Pick<Image, 'url' | 'height' | 'width' | 'altText'>;
+  descriptionHtml?: null | Collection['descriptionHtml'];
+  updatedAt?: null | Collection['updatedAt'];
+  metafields?: null | Collection['metafields'];
+  searchTerm: string;
+};
+
+function searchJsonLd({
+  search,
+  url,
+}: {
+  search: SearchRequiredFields;
+  url: Request['url'];
+}): SeoConfig['jsonLd'] {
+  const origin = new URL(url).origin;
+  const itemListElement: SearchResultsPage['mainEntity'] = search.products.nodes
+    .slice(0, 10)
+    .map((product, index) => {
+      return {
+        '@type': 'ListItem',
+        position: index + 1,
+        url: `/products/${product.handle}`,
+      };
+    });
+
+  return [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Homepage',
+          item: `${origin}/`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: search.seo?.title || search.title || '',
+        },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'SearchResultsPage',
+      name: search.seo?.title || search.title || '',
+      description: truncate(
+        search.seo?.description || search.description || '',
+      ),
+      image: search.image?.url,
+      url: `/search?q=${search.searchTerm}`,
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement,
+      },
+    },
+  ];
+}
+
+function search({
+  search,
+  page,
+  shop,
+  siteSettings,
+  url,
+}: {
+  search: SearchRequiredFields;
+  page?: Page;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+  url: Request['url'];
+}): SeoConfig {
+  const {title, description, media, robots} = getMeta({
+    page,
+    resource: search,
+    shop,
+    siteSettings,
+  });
+  return {
+    title,
+    description,
+    media,
+    robots,
+    jsonLd: searchJsonLd({search, url}),
+  };
+}
+
+function article({
+  page,
+  shop,
+  siteSettings,
+  url,
+}: {
+  page: ArticlePage;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+  url: Request['url'];
+}): SeoConfig {
+  const {title, description, pageTitle, pageDescription, media, robots} =
+    getMeta({
+      page,
+      shop,
+      siteSettings,
+    });
+  return {
+    title,
+    description,
+    media,
+    robots,
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'Article',
+      datePublished: page?.firstPublishedAt,
+      description: pageDescription || truncate(page?.excerpt || ''),
+      headline: pageTitle,
+      image: page?.seo?.image,
+      url,
+    },
+  };
+}
+
+function blog({
+  page,
+  shop,
+  siteSettings,
+  url,
+}: {
+  page: BlogPage;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+  url: Request['url'];
+}): SeoConfig {
+  const {title, description, pageTitle, pageDescription, media, robots} =
+    getMeta({
+      page,
+      shop,
+      siteSettings,
+    });
+  return {
+    title,
+    description,
+    media,
+    robots,
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'Blog',
+      name: pageTitle,
+      description: pageDescription,
+      url,
+    },
+  };
+}
+
+function page({
+  page,
+  shop,
+  siteSettings,
+}: {
+  page?: Page;
+  shop: Shop;
+  siteSettings: RootSiteSettings;
+}): SeoConfig {
+  const {title, description, pageTitle, media, robots} = getMeta({
+    page,
+    shop,
+    siteSettings,
+  });
+  return {
+    title,
+    description,
+    media,
+    robots,
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'WebPage',
+      name: pageTitle,
+    },
+  };
+}
+
+export const seoPayload = {
+  article,
+  blog,
+  collection,
+  home,
+  page,
+  product,
+  root,
+  search,
+};
+
+/**
+ * Truncate a string to a given length, adding an ellipsis if it was truncated
+ * @param str - The string to truncate
+ * @param num - The maximum length of the string
+ * @returns The truncated string
+ * @example
+ * ```js
+ * truncate('Hello world', 5) // 'Hello...'
+ * ```
+ */
+function truncate(str: string, num = 155): string {
+  if (typeof str !== 'string') return '';
+  if (str.length <= num) {
+    return str;
+  }
+  return str.slice(0, num - 3) + '...';
+}

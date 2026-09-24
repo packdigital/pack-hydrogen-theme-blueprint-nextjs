@@ -1,0 +1,73 @@
+import {memo, useMemo} from 'react';
+
+import {useCart, useLocale} from '~/hooks';
+
+import type {FreeShippingMeterProps} from './Cart.types';
+
+export const FreeShippingMeter = memo(({settings}: FreeShippingMeterProps) => {
+  const {cost, discountAllocations = [], totalQuantity = 0} = useCart();
+  const {pathPrefix} = useLocale();
+  const {
+    enabled,
+    minCartSpend = 0,
+    progressBarColor = 'black',
+    progressMessage = '',
+    qualifiedMessage = '',
+  } = {...settings?.freeShipping};
+  const showMeter =
+    enabled && !pathPrefix && totalQuantity > 0 && minCartSpend > 0;
+
+  const discountAmount = useMemo(() => {
+    return discountAllocations.reduce((acc: number, discount) => {
+      if (discount?.discountedAmount?.amount) {
+        return acc + Number(discount.discountedAmount.amount);
+      }
+      return acc;
+    }, 0);
+  }, [discountAllocations]);
+
+  let progress: {percent: number; message: string | undefined} = {
+    percent: 0,
+    message: '',
+  };
+  if (showMeter) {
+    // total = subtotal - discountAmount (discount code applied to cart level)
+    const total = cost?.subtotalAmount?.amount
+      ? Number(cost.subtotalAmount.amount) - discountAmount
+      : 0;
+    const fraction = total / minCartSpend;
+    const remainder = minCartSpend - total;
+
+    progress =
+      fraction >= 1
+        ? {
+            percent: 100,
+            message: qualifiedMessage,
+          }
+        : {
+            percent: fraction * 100,
+            message: progressMessage?.replace(
+              '{{amount}}',
+              `$${remainder.toFixed(2).replace('.00', '')}`,
+            ),
+          };
+  }
+
+  return showMeter ? (
+    <div className="border-b border-b-border p-4">
+      <p className="mb-2 text-center text-xs">{progress.message}</p>
+
+      <div className="h-1.5 w-full overflow-hidden rounded bg-neutralLighter">
+        <div
+          className="size-full origin-left transition"
+          style={{
+            transform: `scaleX(${progress.percent}%)`,
+            backgroundColor: progressBarColor,
+          }}
+        />
+      </div>
+    </div>
+  ) : null;
+});
+
+FreeShippingMeter.displayName = 'FreeShippingMeter';

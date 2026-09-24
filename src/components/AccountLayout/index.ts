@@ -1,0 +1,1 @@
+export {CustomerAccountLayout} from './CustomerAccountLayout';

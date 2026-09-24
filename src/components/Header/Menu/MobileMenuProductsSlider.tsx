@@ -1,0 +1,59 @@
+import {useMemo} from 'react';
+
+import {Carousel} from '~/components/Carousel';
+import {ProductItem} from '~/components/ProductItem';
+import {useColorSwatches, useProductsByIds} from '~/hooks';
+import type {Settings} from '~/lib/types';
+
+import type {UseMobileMenuReturn} from '../useMobileMenu';
+
+type MobileMenuProps = Pick<UseMobileMenuReturn, 'handleCloseMobileMenu'> & {
+  productsSlider: Settings['header']['menu']['productsSlider'];
+};
+
+export function MobileMenuProductsSlider({
+  handleCloseMobileMenu,
+  productsSlider,
+}: MobileMenuProps) {
+  const swatchesMap = useColorSwatches();
+
+  const {products, heading: productsHeading} = {
+    ...productsSlider,
+  };
+
+  const productIds = useMemo(() => {
+    return (
+      products?.reduce((acc: string[], {product}) => {
+        if (!product?.id) return acc;
+        return [...acc, product.id];
+      }, []) || []
+    );
+  }, [products]);
+
+  const fullProducts = useProductsByIds(productIds);
+
+  return (
+    <div className="mb-8">
+      <h3 className="text-h5 mb-2 px-4">{productsHeading}</h3>
+
+      <Carousel
+        ariaLabel={productsHeading || 'Products'}
+        className="mb-5"
+        gap={16}
+        slidesPerView={{base: 1.3}}
+        viewportClassName="px-4"
+        slides={fullProducts.map((product, index) => (
+          <ProductItem
+            index={index}
+            key={index}
+            onClick={handleCloseMobileMenu}
+            product={product}
+            swatchesMap={swatchesMap}
+          />
+        ))}
+      />
+    </div>
+  );
+}
+
+MobileMenuProductsSlider.displayName = 'MobileMenuProductsSlider';

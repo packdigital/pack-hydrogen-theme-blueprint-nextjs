@@ -1,0 +1,157 @@
+import {useEffect, useRef, useState} from 'react';
+import type {Customer} from '@shopify/hydrogen/customer-account-api-types';
+
+import {AnalyticsEvent} from '../constants';
+
+import {
+  viewPageEvent,
+  viewProductEvent,
+  viewCartEvent,
+  viewCollectionEvent,
+  viewSearchResultsEvent,
+  addToCartEvent,
+  removeFromCartEvent,
+  clickProductItemEvent,
+  clickProductVariantEvent,
+  customerEvent,
+  customerLogInEvent,
+  customerRegisterEvent,
+  customerSubscribeEvent,
+  ANALYTICS_NAME,
+} from './events';
+
+type Data = Record<string, any>;
+
+const SCRIPTS_LOADED: Record<string, boolean> = {};
+
+export function GA4Events({
+  ga4TagId,
+  register,
+  subscribe,
+  customer,
+  debug = false,
+}: {
+  ga4TagId: string;
+  register: (key: string) => {ready: () => void};
+  subscribe: (arg0: any, arg1: any) => void;
+  customer?: Customer | null;
+  debug?: boolean;
+}) {
+  let ready: (() => void) | undefined = undefined;
+  if (register) {
+    ready = register(ANALYTICS_NAME).ready;
+  }
+
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+
+  // Keep the latest customer in a ref so the subscribe-once effect below reads
+  // current customer data without re-subscribing on every login/logout (which
+  // would stack duplicate handlers — Hydrogen's subscribe has no unsubscribe).
+  const customerRef = useRef(customer);
+  useEffect(() => {
+    customerRef.current = customer;
+  }, [customer]);
+
+  /* Inject GA4 script and set state when successful */
+  useEffect(() => {
+    if (!ga4TagId) {
+      console.error(
+        `${ANALYTICS_NAME}: ❌ error: \`ga4TagId\` must be passed in.`,
+      );
+    }
+    const scriptId = 'ga4-script';
+    if (!SCRIPTS_LOADED[scriptId]) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.type = 'text/javascript';
+      script.src = `https://www.googletagmanager.com/gtag/js?id=${ga4TagId}`;
+      script.setAttribute('async', '');
+      document.head.appendChild(script);
+      SCRIPTS_LOADED[scriptId] = true;
+    }
+    const configScriptId = 'ga4-config';
+    if (!SCRIPTS_LOADED[configScriptId]) {
+      const configScript = document.createElement('script');
+      configScript.id = configScriptId;
+      configScript.type = 'text/javascript';
+      configScript.innerHTML = `
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', '${ga4TagId}');
+      `;
+      document.head.appendChild(configScript);
+      SCRIPTS_LOADED[configScriptId] = true;
+      if (SCRIPTS_LOADED[scriptId]) {
+        if (debug) console.log(`${ANALYTICS_NAME}: 📝 script is loaded.`);
+      }
+    }
+    setScriptLoaded(true);
+  }, [ga4TagId, debug]);
+
+  useEffect(() => {
+    if (!ga4TagId) return;
+    if (!ready || !subscribe) {
+      console.error(
+        `${ANALYTICS_NAME}: ❌ error: \`register\` and \`subscribe\` must be passed in from Hydrogen's useAnalytics hook.`,
+      );
+      return;
+    }
+    /* register analytics events only until script is ready */
+    if (!scriptLoaded) return;
+    subscribe(AnalyticsEvent.PAGE_VIEWED, (data: Data) => {
+      viewPageEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.PRODUCT_VIEWED, (data: Data) => {
+      viewProductEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.COLLECTION_VIEWED, (data: Data) => {
+      viewCollectionEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.SEARCH_VIEWED, (data: Data) => {
+      viewSearchResultsEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.CART_VIEWED, (data: Data) => {
+      viewCartEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.PRODUCT_VARIANT_SELECTED, (data: Data) => {
+      clickProductVariantEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.PRODUCT_ITEM_CLICKED, (data: Data) => {
+      clickProductItemEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.PRODUCT_ADD_TO_CART, (data: Data) => {
+      addToCartEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.PRODUCT_REMOVED_FROM_CART, (data: Data) => {
+      removeFromCartEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.CUSTOMER, (data: Data) => {
+      customerEvent({...data, customer: customerRef.current, debug});
+    });
+    subscribe(AnalyticsEvent.CUSTOMER_LOGGED_IN, (data: Data) => {
+      customerLogInEvent({...data, debug});
+    });
+    subscribe(AnalyticsEvent.CUSTOMER_REGISTERED, (data: Data) => {
+      customerRegisterEvent({...data, debug});
+    });
+    subscribe(AnalyticsEvent.CUSTOMER_SUBSCRIBED, (data: Data) => {
+      customerSubscribeEvent({...data, debug});
+    });
+    ready();
+    if (debug) console.log(`${ANALYTICS_NAME}: 🔄 subscriptions are ready.`);
+    // Subscribe once when the script is ready; handlers read customerRef for
+    // the latest customer instead of re-subscribing on customer changes.
+  }, [scriptLoaded]);
+
+  useEffect(() => {
+    if (!customer || !ga4TagId) return;
+    if (window.gtag) {
+      window.gtag('config', `${ga4TagId}`, {
+        user_id: customer.id?.split('/').pop() || '',
+      });
+    }
+  }, [customer?.id, ga4TagId]);
+
+  return null;
+}

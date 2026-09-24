@@ -1,0 +1,76 @@
+import {memo} from 'react';
+import clsx from 'clsx';
+
+import {AddToCart} from '~/components/AddToCart';
+import {COLOR_OPTION_NAME} from '~/lib/constants';
+import {useSettings} from '~/hooks';
+
+import type {QuickShopProps} from '../ProductItem.types';
+
+import {QuickShopOptions} from './QuickShopOptions';
+
+export const QuickShop = memo(
+  ({
+    enabledColorSelector,
+    quickShopMobileHidden = true,
+    selectedProduct,
+    selectedVariant,
+  }: QuickShopProps) => {
+    const {collection: collectionSettings} = useSettings();
+    const {quickShopMultiText, quickShopSingleText} = {
+      ...collectionSettings?.productItem,
+    };
+
+    const quickShopOptions = enabledColorSelector
+      ? selectedProduct?.options?.filter(
+          (option) => option.name !== COLOR_OPTION_NAME,
+        )
+      : selectedProduct?.options;
+    const hasOnlySingleValueOptions =
+      quickShopOptions?.every((option) => option.optionValues.length === 1) ||
+      false;
+    const hasOnlyOneOptionWithMultipleValues =
+      quickShopOptions?.reduce(
+        (acc, option) => acc + (option.optionValues.length > 1 ? 1 : 0),
+        0,
+      ) === 1 || false;
+    const qualifiesForQuickShop =
+      !!selectedProduct &&
+      (hasOnlySingleValueOptions || hasOnlyOneOptionWithMultipleValues);
+
+    const hasOneVariant = selectedProduct?.variants?.nodes?.length === 1;
+    const hasOnlyColorOption =
+      enabledColorSelector &&
+      selectedProduct?.options?.length === 1 &&
+      selectedProduct?.options[0].name === COLOR_OPTION_NAME;
+    const usesAddToCart = hasOneVariant || hasOnlyColorOption;
+
+    return qualifiesForQuickShop && selectedVariant ? (
+      <div
+        className={clsx(
+          'mt-5 transition md:block md:opacity-0 md:group-hover:opacity-100 lg:mt-6',
+          quickShopMobileHidden && 'max-md:hidden',
+        )}
+      >
+        {usesAddToCart && (
+          <AddToCart
+            addToCartText={quickShopSingleText}
+            className="btn-inverse-dark"
+            selectedVariant={selectedVariant}
+          />
+        )}
+
+        {selectedProduct && !usesAddToCart && (
+          <QuickShopOptions
+            quickShopMultiText={quickShopMultiText}
+            quickShopMobileHidden={quickShopMobileHidden}
+            selectedProduct={selectedProduct}
+            selectedVariant={selectedVariant}
+          />
+        )}
+      </div>
+    ) : null;
+  },
+);
+
+QuickShop.displayName = 'QuickShop';
