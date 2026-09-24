@@ -1,0 +1,124 @@
+import {forwardRef, useRef} from 'react';
+import clsx from 'clsx';
+import type {Video} from '@shopify/hydrogen/storefront-api-types';
+
+import {Image} from '~/components/Image';
+
+import type {
+  BYOBProductItemMediaProps,
+  BYOBProductItemVideoProps,
+} from './BYOBProductItem.types';
+
+export function BYOBProductItemMedia({
+  media,
+  productTitle,
+}: BYOBProductItemMediaProps) {
+  const hoverVideoRef = useRef<HTMLVideoElement>(null);
+
+  const [primaryMedia, hoverMedia] = [...(media || [])];
+
+  return (
+    <div
+      className="group/media relative aspect-[var(--product-image-aspect-ratio)]"
+      onMouseEnter={() => {
+        if (hoverMedia?.mediaContentType !== 'VIDEO') return;
+        hoverVideoRef.current?.play();
+      }}
+      onMouseLeave={() => {
+        if (hoverMedia?.mediaContentType !== 'VIDEO') return;
+        hoverVideoRef.current?.pause();
+      }}
+    >
+      {primaryMedia && (
+        <div
+          className={clsx(
+            hoverMedia &&
+              'opacity-100 transition duration-300 md:group-hover/media:opacity-0',
+          )}
+        >
+          {primaryMedia.mediaContentType === 'VIDEO' ? (
+            <BYOBProductItemVideo autoPlay media={primaryMedia as Video} />
+          ) : (
+            <Image
+              data={{
+                altText: productTitle,
+                url: primaryMedia.previewImage?.url,
+              }}
+              className="media-fill"
+              loading="eager"
+              sizes="(min-width: 1280px) 20vw, (min-width: 768px) 30vw, 45vw"
+            />
+          )}
+        </div>
+      )}
+
+      {hoverMedia && (
+        <div className="absolute inset-0 hidden size-full opacity-0 transition duration-300 md:block md:group-hover/media:opacity-100">
+          {hoverMedia.mediaContentType === 'VIDEO' ? (
+            <BYOBProductItemVideo
+              autoPlay={false}
+              media={hoverMedia as Video}
+              ref={hoverVideoRef}
+            />
+          ) : (
+            <Image
+              data={{
+                altText: productTitle,
+                url: hoverMedia.previewImage?.url,
+              }}
+              className="media-fill"
+              sizes="(min-width: 1280px) 20vw, (min-width: 768px) 30vw, 45vw"
+            />
+          )}
+        </div>
+      )}
+
+      {/* loading shimmer */}
+      {!primaryMedia && (
+        <div className="size-full animate-pulse bg-neutralLightest" />
+      )}
+    </div>
+  );
+}
+
+BYOBProductItemMedia.displayName = 'BYOBProductItemMedia';
+
+export const BYOBProductItemVideo = forwardRef(
+  (
+    {autoPlay = false, media}: BYOBProductItemVideoProps,
+    ref: React.Ref<HTMLVideoElement> | undefined,
+  ) => {
+    const {sources, previewImage} = media;
+    const videoSources = sources?.filter(
+      ({mimeType}) => mimeType === 'video/mp4',
+    );
+
+    return (
+      <video
+        ref={ref}
+        autoPlay={autoPlay}
+        muted
+        playsInline
+        loop
+        controls={false}
+        poster={previewImage?.url}
+        className="media-fill"
+        key={JSON.stringify(videoSources)}
+      >
+        {videoSources?.length
+          ? videoSources.map((source) => {
+              return (
+                <source
+                  key={source.url}
+                  src={source.url}
+                  type={source.mimeType}
+                />
+              );
+            })
+          : null}
+      </video>
+    );
+  },
+);
+
+BYOBProductItemVideo.displayName = 'BYOBProductItemVideo';

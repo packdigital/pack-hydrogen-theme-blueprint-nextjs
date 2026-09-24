@@ -1,0 +1,293 @@
+import {useEffect, useMemo, useRef, useState} from 'react';
+import clsx from 'clsx';
+
+import {LoadingDots} from '~/components/Animations';
+import {Select} from '~/components/Select';
+import {useCountriesList} from '~/hooks';
+
+import type {
+  InitialAddressForm,
+  AddressFormProps,
+  ProvinceType,
+} from './Addresses.types';
+
+export function AddressForm({
+  buttonText,
+  closeForm,
+  defaultAddress,
+  errors,
+  initialAddress,
+  onSubmit,
+  status,
+  title,
+}: AddressFormProps) {
+  const formRef = useRef<InitialAddressForm>(null);
+  const {countryNames, countryNamesData} = useCountriesList({
+    firstCountries: ['United States', 'Canada', 'United Kingdom', 'Australia'],
+  });
+
+  const [province, setProvince] = useState(initialAddress?.zoneCode || '');
+  const [country, setCountry] = useState(initialAddress?.territoryCode || '');
+  const [isDefault, setIsDefault] = useState(false);
+
+  const countries = countryNamesData.map((countryData) => ({
+    label: countryData.countryName,
+    value: countryData.countryShortCode,
+  }));
+
+  const countriesByShortCode = useMemo(() => {
+    return countryNamesData.reduce((acc, countryData) => {
+      acc[countryData.countryShortCode] = countryData;
+      return acc;
+    }, {});
+  }, [countryNamesData]);
+
+  const provinces = useMemo(() => {
+    const countryData = countriesByShortCode[country];
+    return countryData?.regions?.map((regionData: ProvinceType) => ({
+      label: regionData.name,
+      value: regionData.shortCode,
+    })) as {label: string; value: string}[];
+  }, [country, countriesByShortCode]);
+
+  const provincesByShortCode = provinces?.reduce(
+    (acc: Record<string, string>, provinceData) => {
+      acc[provinceData.value] = provinceData.label;
+      return acc;
+    },
+    {},
+  );
+
+  useEffect(() => {
+    if (!formRef.current) return;
+    if (!initialAddress) {
+      setCountry('US');
+      return;
+    }
+    formRef.current.elements.firstName.value = initialAddress.firstName || '';
+    formRef.current.elements.lastName.value = initialAddress.lastName || '';
+    formRef.current.elements.company.value = initialAddress.company || '';
+    formRef.current.elements.address1.value = initialAddress.address1 || '';
+    formRef.current.elements.address2.value = initialAddress.address2 || '';
+    formRef.current.elements.city.value = initialAddress.city || '';
+    formRef.current.elements.zip.value = initialAddress.zip || '';
+    formRef.current.elements.phoneNumber.value =
+      initialAddress.phoneNumber || '';
+    setProvince(initialAddress.zoneCode || '');
+    setCountry(initialAddress.territoryCode || '');
+    setIsDefault(
+      defaultAddress?.id?.split('?')[0] === initialAddress.id?.split('?')[0],
+    );
+  }, [initialAddress, defaultAddress?.id]);
+
+  return (
+    <div className="rounded border border-border p-4 sm:p-8">
+      <div className="mb-8 flex items-start justify-between gap-3">
+        <h2 className="text-h5">{title}</h2>
+
+        <button
+          aria-label="Cancel"
+          className="text-nav text-main-underline font-normal"
+          onClick={closeForm}
+          type="button"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <form
+        className="grid grid-cols-2 gap-3"
+        onSubmit={onSubmit}
+        ref={formRef}
+      >
+        <label htmlFor="firstName" className="col-span-2 sm:col-span-1">
+          <span className="input-label">First Name</span>
+          <input
+            className="input-text"
+            id="firstName"
+            name="firstName"
+            placeholder="First Name"
+            required
+            type="text"
+          />
+        </label>
+
+        <label htmlFor="lastName" className="col-span-2 sm:col-span-1">
+          <span className="input-label">Last Name</span>
+          <input
+            className="input-text"
+            id="lastName"
+            name="lastName"
+            placeholder="Last Name"
+            required
+            type="text"
+          />
+        </label>
+
+        <label htmlFor="company" className="col-span-2">
+          <span className="input-label">Company</span>
+          <input
+            className="input-text"
+            id="company"
+            name="company"
+            placeholder="Company"
+            type="text"
+          />
+        </label>
+
+        <label htmlFor="address1" className="col-span-2">
+          <span className="input-label">Address 1</span>
+          <input
+            className="input-text"
+            id="address1"
+            name="address1"
+            placeholder="Address 1"
+            required
+            type="text"
+          />
+        </label>
+
+        <label htmlFor="address2" className="col-span-2">
+          <span className="input-label">Address 2</span>
+          <input
+            className="input-text"
+            id="address2"
+            name="address2"
+            placeholder="Address 2"
+            type="text"
+          />
+        </label>
+
+        <label htmlFor="city" className="col-span-2 sm:col-span-1">
+          <span className="input-label">City</span>
+          <input
+            className="input-text"
+            id="city"
+            name="city"
+            placeholder="City"
+            required
+            type="text"
+          />
+        </label>
+
+        <div className="z-[11] col-span-2 sm:col-span-1">
+          <p className="input-label">State/Province</p>
+
+          <Select
+            name="zoneCode"
+            onSelect={({value}) => setProvince(value || '')}
+            options={provinces || []}
+            placeholder="Select State/Province"
+            selectedClass="text-base"
+            selectedOption={{
+              label: provincesByShortCode?.[province] || '',
+              value: province,
+            }}
+          />
+        </div>
+
+        <label htmlFor="zip" className="col-span-2 sm:col-span-1">
+          <span className="input-label">Zip</span>
+          <input
+            className="input-text"
+            id="zip"
+            name="zip"
+            placeholder="Zip"
+            required
+            type="text"
+          />
+        </label>
+
+        <div className="col-span-2 sm:col-span-1">
+          <p className="input-label">Country</p>
+
+          <Select
+            name="territoryCode"
+            onSelect={({value}) => {
+              setCountry(value || '');
+            }}
+            options={countries}
+            placeholder="Select Country"
+            selectedClass="text-base"
+            selectedOption={{
+              label: countriesByShortCode[country]?.countryName || '',
+              value: country,
+            }}
+          />
+        </div>
+
+        <label htmlFor="phone" className="col-span-2 sm:col-span-1">
+          <span className="input-label">Phone</span>
+          <input
+            className="input-text"
+            id="phone"
+            name="phoneNumber"
+            placeholder="Phone"
+            type="tel"
+          />
+        </label>
+
+        <label
+          htmlFor="isDefault"
+          className="col-span-2 mt-2 flex items-center"
+        >
+          <input
+            checked={isDefault}
+            className="cursor-pointer"
+            onChange={(e) => setIsDefault(e.target.checked)}
+            type="checkbox"
+          />
+          <span className="ml-2 text-sm">Set as default address</span>
+        </label>
+
+        <input
+          type="hidden"
+          id="isDefault"
+          name="isDefault"
+          value={`${isDefault}`}
+        />
+
+        {!!initialAddress?.id && (
+          <input type="hidden" name="id" value={initialAddress.id} />
+        )}
+
+        <div className="col-span-2 mt-4 flex justify-center">
+          <button
+            aria-label={initialAddress ? 'Update Address' : 'Add Address'}
+            className={clsx(
+              'btn-primary w-full min-w-48 md:w-auto',
+              status.started && 'cursor-default',
+            )}
+            type="submit"
+          >
+            <span className={clsx(status.started ? 'invisible' : 'visible')}>
+              {buttonText}
+            </span>
+
+            {status.started && (
+              <LoadingDots
+                status="Submitting"
+                withAbsolutePosition
+                withStatusRole
+              />
+            )}
+          </button>
+        </div>
+
+        {errors?.length > 0 && (
+          <ul className="col-span-2 mt-4 flex flex-col items-center gap-1">
+            {errors.map((error, index) => {
+              return (
+                <li key={index} className="text-center text-sm text-red-500">
+                  {error}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </form>
+    </div>
+  );
+}
+
+AddressForm.displayname = 'AddressForm';

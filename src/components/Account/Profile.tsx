@@ -1,0 +1,159 @@
+import {useEffect, useRef, useState} from 'react';
+import clsx from 'clsx';
+
+import {useLocation} from '~/lib/router';
+import {LoadingDots} from '~/components/Animations';
+import {useCustomer, useCustomerUpdateProfile, useSettings} from '~/hooks';
+
+interface ProfileFormElements extends HTMLFormControlsCollection {
+  firstName: HTMLInputElement;
+  lastName: HTMLInputElement;
+}
+
+interface ProfileForm extends HTMLFormElement {
+  elements: ProfileFormElements;
+}
+
+export function Profile() {
+  const formRef = useRef<ProfileForm>(null);
+  const {updateCustomerDetails, errors, status} = useCustomerUpdateProfile();
+  const customer = useCustomer();
+  const {pathname} = useLocation();
+  const {account} = useSettings();
+
+  const [buttonText, setButtonText] = useState('Save');
+  const [acceptsMarketing, setAcceptsMarketing] = useState(false);
+
+  const {menuItems} = {...account?.menu};
+  const heading = menuItems?.find(({link}) => pathname.startsWith(link?.url))
+    ?.link?.text;
+
+  const {enableMarketingOptIn, marketingOptInText} = {...account?.profile};
+  const isSubscribed = customer?.emailAddress?.marketingState === 'SUBSCRIBED';
+
+  useEffect(() => {
+    if (!formRef.current) return;
+    if (!customer) return;
+    formRef.current.elements.firstName.value = customer.firstName || '';
+    formRef.current.elements.lastName.value = customer.lastName || '';
+    setAcceptsMarketing(isSubscribed);
+  }, [customer, isSubscribed]);
+
+  useEffect(() => {
+    if (!status.success) return;
+    setButtonText('Saved!');
+    setTimeout(() => setButtonText('Save'), 1000);
+  }, [status.success]);
+
+  return (
+    <div className="flex flex-col">
+      <h1 className="text-h4 mb-8 md:mb-10">{heading}</h1>
+
+      <form
+        className="grid grid-cols-2 gap-3 rounded border border-border p-4 sm:p-6"
+        ref={formRef}
+        onSubmit={updateCustomerDetails}
+      >
+        <label htmlFor="firstName" className="col-span-2 sm:col-span-1">
+          <span className="input-label">First Name</span>
+          <input
+            className="input-text"
+            id="firstName"
+            name="firstName"
+            placeholder="First Name"
+            required
+            type="text"
+          />
+        </label>
+
+        <label htmlFor="lastName" className="col-span-2 sm:col-span-1">
+          <span className="input-label">Last Name</span>
+          <input
+            className="input-text"
+            id="lastName"
+            name="lastName"
+            placeholder="Last Name"
+            required
+            type="text"
+          />
+        </label>
+
+        <label htmlFor="email" className="col-span-2">
+          <span className="input-label">Email</span>
+          <input
+            className="input-text text-neutralMedium"
+            disabled
+            id="email"
+            name="email"
+            placeholder="Email"
+            required
+            type="email"
+            value={customer?.emailAddress?.emailAddress || ''}
+          />
+        </label>
+
+        {enableMarketingOptIn && (
+          <label
+            htmlFor="acceptsMarketing"
+            className="col-span-2 flex cursor-pointer items-start gap-2"
+          >
+            <input
+              checked={acceptsMarketing}
+              className="mt-0.5 size-4 shrink-0 cursor-pointer accent-black"
+              id="acceptsMarketing"
+              name="acceptsMarketing"
+              onChange={(e) => setAcceptsMarketing(e.target.checked)}
+              type="checkbox"
+            />
+            <span className="text-sm">
+              {marketingOptInText || 'Email me with news and offers'}
+            </span>
+
+            <input
+              name="acceptsMarketingInitial"
+              type="hidden"
+              value={isSubscribed ? 'true' : 'false'}
+            />
+          </label>
+        )}
+
+        <div className="col-span-2 flex justify-center">
+          <button
+            aria-label="Save to update profile"
+            className={clsx(
+              'btn-primary mt-4 w-full min-w-40 md:w-auto',
+              status.started && 'cursor-default',
+            )}
+            type="submit"
+          >
+            <span className={clsx(status.started ? 'invisible' : 'visible')}>
+              {buttonText}
+            </span>
+
+            {status.started && (
+              <LoadingDots
+                status="Submitting"
+                withAbsolutePosition
+                withStatusRole
+              />
+            )}
+          </button>
+        </div>
+
+        {errors?.length > 0 && (
+          <ul className="col-span-2 mt-4 flex flex-col items-center gap-1">
+            {errors.map((error, index) => {
+              return (
+                <li key={index} className="text-center text-sm text-red-500">
+                  {error}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </form>
+    </div>
+  );
+}
+
+Profile.displayName = 'Profile';

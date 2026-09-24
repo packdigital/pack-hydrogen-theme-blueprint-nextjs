@@ -1,0 +1,51 @@
+import {
+  checkIfEmailIsInList,
+  checkIfPhoneNumberIsInList,
+  createClientSubscription,
+  subscribeToBackInStock,
+} from '~/lib/klaviyo';
+import {routeHandler} from '~/lib/server/route';
+import type {ActionArgs} from '~/lib/server/route';
+
+async function action({request, context}: ActionArgs) {
+  let body;
+  try {
+    body = await request.formData();
+  } catch (error) {}
+  const action = String(body?.get('action') || '');
+
+  const actions: Record<string, any> = {
+    checkIfEmailIsInList,
+    checkIfPhoneNumberIsInList,
+    createClientSubscription,
+    subscribeToBackInStock,
+  };
+  const klaviyoAction = actions[action];
+
+  if (!klaviyoAction) {
+    return Response.json(
+      {error: `/api/klaviyo: Unsupported action \`${action}\``},
+      {status: 400},
+    );
+  }
+
+  const env = context.env as Record<string, any>;
+  // private key env must be set locally and through the Hydrogen app
+  const privateApiKey = env.PRIVATE_KLAVIYO_API_KEY;
+  const publicApiKey = env.PUBLIC_KLAVIYO_API_KEY;
+  const apiVersion =
+    (env.PUBLIC_KLAIVYO_REVISION?.startsWith('v')
+      ? env.PUBLIC_KLAIVYO_REVISION.slice(1)
+      : env.PUBLIC_KLAIVYO_REVISION) || '2024-05-15';
+
+  const data = await klaviyoAction({
+    body,
+    privateApiKey,
+    publicApiKey,
+    apiVersion,
+  });
+
+  return Response.json({...data}, {status: data?.status || 500});
+}
+
+export const POST = routeHandler(action);
