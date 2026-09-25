@@ -65,9 +65,11 @@ redirects and `/admin` are resolved in `src/proxy.ts` before rendering, and
 
 ### Cache Components and HTTP status
 
-`cacheComponents` is enabled, and the `[locale]` layout sets `instant = false`
-(pages render on request). The page response commits to `200` before a
-page renders, so `redirect()` in a loader is a client-side redirect and
+`cacheComponents` is enabled. The `[locale]` layout and pages set
+`instant = false`, which only opts them out of instant-navigation and
+static-shell validation; it does not change rendering. `app/[locale]/loading.tsx`
+is the loading UI that navigations show while a page renders. The page
+response commits to `200` before a page renders, so `redirect()` in a loader is a client-side redirect and
 `notFound()` is a `noindex` soft 404. Anything that needs a real 3xx/4xx
 status (auth gates, URL redirects) must be decided in `src/proxy.ts`, which
 already handles `/admin`, signed-out `/account/*` and Shopify URL redirects.

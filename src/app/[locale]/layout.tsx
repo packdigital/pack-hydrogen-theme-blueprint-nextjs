@@ -18,12 +18,14 @@ import '~/styles/app.css';
  */
 
 /**
- * Every storefront page renders from per-request state (Pack session and A/B
- * test cookies, customer session, cart, buyer locale), so the storefront opts
- * out of the Cache Components static shell and renders on request, as it did
- * on Oxygen. Rendering before streaming keeps real HTTP statuses for 404s and
- * redirects (Shopify URL redirects, account auth) instead of client-side ones.
- * Data is still cached below the page with 'use cache: remote'.
+ * `instant = false` opts the storefront out of Cache Components'
+ * instant-navigation and static-shell validation. It does not change
+ * rendering. This layout and every page read per-request state (Pack session
+ * and A/B test cookies, customer session, cart, buyer locale) at the top of
+ * the tree, so they would fail both checks: a full page load has no static
+ * shell, and client navigations prefetch only `loading.tsx`. Data is cached
+ * below the page with 'use cache: remote'. Moving per-request reads below
+ * <Suspense> would let cached page content into the shell.
  */
 export const instant = false;
 

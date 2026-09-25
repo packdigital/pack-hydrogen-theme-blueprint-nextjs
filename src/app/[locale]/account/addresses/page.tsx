@@ -6,8 +6,8 @@ import {runLoader} from '~/lib/server/route';
 import type {LoaderArgs} from '~/lib/server/route';
 import AddressesRoute from '~/routes/($locale).account.addresses';
 
-// Renders from per-request state, so it intentionally blocks instead of
-// streaming a static shell. See `instant` in app/[locale]/layout.tsx.
+// Opts out of instant-navigation and static-shell validation (checks only,
+// rendering is unchanged). See `instant` in app/[locale]/layout.tsx.
 export const instant = false;
 
 type Params = {locale: string};
