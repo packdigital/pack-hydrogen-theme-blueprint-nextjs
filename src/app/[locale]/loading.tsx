@@ -1,4 +1,6 @@
-import {ProductItemSkeleton} from '~/components/ProductItem';
+// Imported directly: the `~/components/ProductItem` barrel pulls in client
+// hooks, which can't be imported into this server component.
+import {ProductItemSkeleton} from '~/components/ProductItem/ProductItemSkeleton';
 
 /**
  * Loading UI for every storefront page. It is static, so it goes into the
